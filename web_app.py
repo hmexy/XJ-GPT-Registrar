@@ -17,9 +17,11 @@ import threading
 import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import datetime
+from urllib.parse import urlparse
 
 from flask import Flask, Response, jsonify, render_template, request
 
+from config import proxy as proxy_config
 from core.account_export import create_batch_archive_dir
 from core.email_provider import acquire_email
 from core.outlook_client import OutlookAccount, _CONTEXT_CACHE
@@ -277,6 +279,63 @@ def index():
 @app.route("/api/status")
 def api_status():
     return jsonify(_snapshot_state())
+
+
+_ALLOWED_PROXY_SCHEMES = {"http", "https", "socks5", "socks5h"}
+
+
+def _validate_proxy_url(raw: str) -> str:
+    """校验代理 URL,返回 normalized 值。空串表示直连,允许通过。"""
+    s = (raw or "").strip()
+    if s == "":
+        return ""
+    try:
+        u = urlparse(s)
+    except Exception as exc:
+        raise ValueError(f"无法解析代理 URL: {exc}")
+    if u.scheme not in _ALLOWED_PROXY_SCHEMES:
+        raise ValueError(
+            f"不支持的协议 '{u.scheme}',只接受 {sorted(_ALLOWED_PROXY_SCHEMES)}"
+        )
+    if not u.hostname:
+        raise ValueError("缺少 host,期望形如 http://127.0.0.1:7890")
+    if u.port is not None and not (1 <= u.port <= 65535):
+        raise ValueError(f"端口超出范围: {u.port}")
+    return s
+
+
+@app.route("/api/proxy", methods=["GET"])
+def api_proxy_get():
+    return jsonify({
+        "override": proxy_config.get_runtime_proxy(),
+        "pool": list(proxy_config.PROXY_POOL),
+        "effective": proxy_config.pick_proxy(),
+    })
+
+
+@app.route("/api/proxy", methods=["POST"])
+def api_proxy_set():
+    data = request.get_json(silent=True) or {}
+    if "proxy" not in data:
+        return jsonify({"ok": False, "error": "请求体缺少 'proxy' 字段"}), 400
+
+    val = data["proxy"]
+    if val is None:
+        proxy_config.set_runtime_proxy(None)
+        logger.info("[代理] 已清除 runtime override,恢复 PROXY_POOL 抽取")
+    else:
+        try:
+            normalized = _validate_proxy_url(str(val))
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        proxy_config.set_runtime_proxy(normalized)
+        logger.info(f"[代理] runtime override 已设置为: {normalized or '(直连)'}")
+
+    return jsonify({
+        "ok": True,
+        "override": proxy_config.get_runtime_proxy(),
+        "effective": proxy_config.pick_proxy(),
+    })
 
 
 @app.route("/api/start", methods=["POST"])
