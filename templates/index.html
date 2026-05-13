@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>XJ-GPT 协议注册机</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    margin: 0; padding: 20px; background: #1e1e1e; color: #d4d4d4;
+  }
+  h1 { font-size: 20px; margin: 0 0 16px; color: #fff; }
+  .layout { display: grid; grid-template-columns: 420px 1fr; gap: 20px; max-width: 1600px; }
+  .panel {
+    background: #252526; border: 1px solid #3c3c3c; border-radius: 6px;
+    padding: 16px; margin-bottom: 16px;
+  }
+  .panel h2 {
+    font-size: 13px; margin: 0 0 12px; color: #9cdcfe;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  label { display: block; font-size: 13px; margin-bottom: 6px; color: #cccccc; }
+  input[type=text], input[type=number], textarea {
+    width: 100%; background: #1e1e1e; color: #d4d4d4;
+    border: 1px solid #3c3c3c; border-radius: 4px; padding: 8px;
+    font-family: Consolas, "Courier New", monospace; font-size: 13px;
+  }
+  textarea { resize: vertical; min-height: 180px; }
+  input:focus, textarea:focus { outline: none; border-color: #007acc; }
+  .row { display: flex; gap: 12px; }
+  .row > div { flex: 1; }
+  .radio-group { display: flex; gap: 16px; margin-bottom: 12px; }
+  .radio-group label {
+    display: flex; align-items: center; gap: 6px; cursor: pointer; margin: 0;
+  }
+  button#start {
+    width: 100%; padding: 10px; background: #007acc; color: #fff;
+    border: none; border-radius: 4px; font-size: 14px; cursor: pointer;
+    font-weight: 600;
+  }
+  button#start:hover:not(:disabled) { background: #1e8fd6; }
+  button#start:disabled { background: #555; cursor: not-allowed; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .stat-card {
+    background: #1e1e1e; padding: 10px; border-radius: 4px;
+    border: 1px solid #3c3c3c; text-align: center;
+  }
+  .stat-card .num { font-size: 22px; font-weight: 600; }
+  .stat-card .lbl { font-size: 11px; color: #888; margin-top: 2px; }
+  .stat-card.success .num { color: #4ec9b0; }
+  .stat-card.failed .num { color: #f48771; }
+  .stat-card.target .num { color: #9cdcfe; }
+  .stat-card.done .num { color: #dcdcaa; }
+
+  #log {
+    background: #1e1e1e; border: 1px solid #3c3c3c; border-radius: 4px;
+    padding: 12px; font-family: Consolas, "Courier New", monospace;
+    font-size: 12px; line-height: 1.5; color: #d4d4d4;
+    height: calc(100vh - 100px); overflow-y: auto;
+    white-space: pre-wrap; word-break: break-all;
+  }
+  .log-line { margin: 0; }
+  .log-line.error { color: #f48771; }
+  .log-line.warn  { color: #dcdcaa; }
+  .log-line.info  { color: #d4d4d4; }
+  .log-line.debug { color: #888; }
+  .log-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; font-size: 12px; }
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 10px;
+    font-size: 11px; background: #3c3c3c;
+  }
+  .badge.running { background: #007acc; color: #fff; }
+  .badge.idle { background: #3c3c3c; color: #888; }
+  .hint { font-size: 11px; color: #888; margin-top: 4px; }
+  .err-banner {
+    background: #5a1d1d; color: #f48771; padding: 8px 12px;
+    border-radius: 4px; margin-bottom: 12px; font-size: 12px;
+    display: none;
+  }
+</style>
+</head>
+<body>
+
+<h1>XJ-GPT 协议注册机 · Web GUI</h1>
+
+<div class="layout">
+  <!-- 左列:控制 -->
+  <div>
+    <div class="panel">
+      <h2>邮箱来源</h2>
+      <div class="radio-group">
+        <label><input type="radio" name="mode" value="outlook" checked> Outlook 自动取件</label>
+        <label><input type="radio" name="mode" value="manual"> 手动粘贴邮箱</label>
+      </div>
+      <div id="manual-box" style="display:none;">
+        <label>邮箱列表(每行一个)</label>
+        <textarea id="emails" placeholder="支持两种格式,自动识别:&#10;1) email----password----client_id----refresh_token&#10;2) email:password::refresh_token:client_id::refresh_token&#10;每行一个"></textarea>
+        <div class="hint" id="email-count">0 行</div>
+      </div>
+      <div id="outlook-hint" class="hint">从 <code>用于注册的邮箱.json</code> 中按 status=available 自动抽取</div>
+    </div>
+
+    <div class="panel">
+      <h2>参数</h2>
+      <div class="row">
+        <div>
+          <label>数量</label>
+          <input type="number" id="count" value="1" min="1">
+        </div>
+        <div>
+          <label>并发</label>
+          <input type="number" id="workers" value="1" min="1">
+        </div>
+      </div>
+      <label style="margin-top:12px;">
+        <input type="checkbox" id="continue-on-fail" checked> 单个失败后继续
+      </label>
+    </div>
+
+    <div class="panel">
+      <div id="err-banner" class="err-banner"></div>
+      <button id="start">开始注册</button>
+    </div>
+
+    <div class="panel">
+      <h2>状态 <span id="run-badge" class="badge idle">闲置</span></h2>
+      <div class="stats">
+        <div class="stat-card target"><div class="num" id="s-target">0</div><div class="lbl">目标</div></div>
+        <div class="stat-card done"><div class="num" id="s-done">0</div><div class="lbl">已完成</div></div>
+        <div class="stat-card success"><div class="num" id="s-success">0</div><div class="lbl">成功</div></div>
+        <div class="stat-card failed"><div class="num" id="s-failed">0</div><div class="lbl">失败</div></div>
+      </div>
+      <div class="hint" id="last-error" style="color:#f48771;margin-top:8px;"></div>
+    </div>
+  </div>
+
+  <!-- 右列:日志 -->
+  <div class="panel" style="margin:0;">
+    <div class="log-toolbar">
+      <h2 style="margin:0;flex:0;">实时日志</h2>
+      <label style="margin:0;"><input type="checkbox" id="autoscroll" checked> 自动滚动</label>
+      <button id="clear-log" style="padding:4px 10px;background:#3c3c3c;color:#d4d4d4;border:none;border-radius:3px;cursor:pointer;font-size:12px;">清空</button>
+      <span class="hint" id="sse-status" style="margin-left:auto;">未连接</span>
+    </div>
+    <pre id="log"></pre>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const modeRadios = document.querySelectorAll('input[name="mode"]');
+const manualBox = $('manual-box');
+const outlookHint = $('outlook-hint');
+const emailsTa = $('emails');
+const emailCount = $('email-count');
+const startBtn = $('start');
+const errBanner = $('err-banner');
+const logEl = $('log');
+const autoscroll = $('autoscroll');
+const sseStatus = $('sse-status');
+
+function currentMode() {
+  return document.querySelector('input[name="mode"]:checked').value;
+}
+
+function updateModeUI() {
+  const m = currentMode();
+  manualBox.style.display = m === 'manual' ? 'block' : 'none';
+  outlookHint.style.display = m === 'outlook' ? 'block' : 'none';
+}
+modeRadios.forEach(r => r.addEventListener('change', updateModeUI));
+updateModeUI();
+
+emailsTa.addEventListener('input', () => {
+  const n = emailsTa.value.split('\n').filter(l => l.trim()).length;
+  emailCount.textContent = n + ' 行';
+});
+
+function showError(msg) {
+  errBanner.textContent = msg;
+  errBanner.style.display = msg ? 'block' : 'none';
+}
+
+startBtn.addEventListener('click', async () => {
+  showError('');
+  const mode = currentMode();
+  const count = parseInt($('count').value, 10);
+  const workers = parseInt($('workers').value, 10);
+  const continue_on_fail = $('continue-on-fail').checked;
+  const emails = emailsTa.value;
+
+  if (!count || count < 1) { showError('数量必须 >= 1'); return; }
+  if (!workers || workers < 1) { showError('并发必须 >= 1'); return; }
+  if (mode === 'manual') {
+    const n = emails.split('\n').filter(l => l.trim()).length;
+    if (n < count) { showError(`手动模式需要至少 ${count} 行邮箱,当前 ${n} 行`); return; }
+  }
+
+  startBtn.disabled = true;
+  startBtn.textContent = '提交中…';
+
+  try {
+    const resp = await fetch('/api/start', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({mode, count, workers, continue_on_fail, emails}),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) {
+      showError(data.error || ('HTTP ' + resp.status));
+      startBtn.disabled = false;
+      startBtn.textContent = '开始注册';
+    }
+  } catch (e) {
+    showError(String(e));
+    startBtn.disabled = false;
+    startBtn.textContent = '开始注册';
+  }
+});
+
+$('clear-log').addEventListener('click', () => { logEl.textContent = ''; });
+
+function classify(line) {
+  if (/\[ERROR\]/.test(line)) return 'error';
+  if (/\[WARNING\]/.test(line)) return 'warn';
+  if (/\[DEBUG\]/.test(line)) return 'debug';
+  return 'info';
+}
+
+function appendLog(line) {
+  const div = document.createElement('div');
+  div.className = 'log-line ' + classify(line);
+  div.textContent = line;
+  logEl.appendChild(div);
+  while (logEl.childNodes.length > 2000) logEl.removeChild(logEl.firstChild);
+  if (autoscroll.checked) logEl.scrollTop = logEl.scrollHeight;
+}
+
+let es = null;
+function connectSSE() {
+  es = new EventSource('/api/logs/stream');
+  es.onopen = () => { sseStatus.textContent = '已连接'; sseStatus.style.color = '#4ec9b0'; };
+  es.onerror = () => { sseStatus.textContent = '重连中…'; sseStatus.style.color = '#dcdcaa'; };
+  es.onmessage = (ev) => {
+    try {
+      const o = JSON.parse(ev.data);
+      if (o.line) appendLog(o.line);
+    } catch (_) {}
+  };
+}
+connectSSE();
+
+async function pollStatus() {
+  try {
+    const r = await fetch('/api/status');
+    const s = await r.json();
+    $('s-target').textContent = s.target || 0;
+    $('s-done').textContent = s.done || 0;
+    $('s-success').textContent = s.success || 0;
+    $('s-failed').textContent = s.failed || 0;
+    const badge = $('run-badge');
+    if (s.running) {
+      badge.textContent = `运行中 (${s.mode})`;
+      badge.className = 'badge running';
+      startBtn.disabled = true;
+      startBtn.textContent = '运行中…';
+    } else {
+      badge.textContent = s.finished_at ? '已完成' : '闲置';
+      badge.className = 'badge idle';
+      startBtn.disabled = false;
+      startBtn.textContent = '开始注册';
+    }
+    $('last-error').textContent = s.last_error ? ('最近错误: ' + s.last_error) : '';
+  } catch (_) {}
+}
+pollStatus();
+setInterval(pollStatus, 1500);
+</script>
+</body>
+</html>

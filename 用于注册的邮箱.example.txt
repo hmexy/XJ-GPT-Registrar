@@ -1,0 +1,11 @@
+# XJ-GPT 协议注册机 · 输入邮箱池格式样例
+#
+# ⚠️ 真实邮箱请填到 用于注册的邮箱.txt(已被 .gitignore 排除),
+# 不要把真实 password / refresh_token 提交到 git。
+#
+# 每行一条,4 段用 ---- 分隔(顺序固定):
+# email----password----client_id----refresh_token
+#
+# 示例(虚构数据):
+example1@hotmail.com----DEMO_PASSWORD_1----9e5f94bc-e8a4-4e73-b8be-63364c29d753----DEMO_REFRESH_TOKEN_1
+example2@outlook.com----DEMO_PASSWORD_2----9e5f94bc-e8a4-4e73-b8be-63364c29d753----DEMO_REFRESH_TOKEN_2
