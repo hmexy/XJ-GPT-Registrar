@@ -65,10 +65,6 @@
 git clone <repo_url>
 cd XJ-GPT-Registrar
 pip install -r requirements.txt
-
-# 复制配置/邮箱池模板,然后填入真实凭据(.gitignore 已排除真实文件)
-cp config/flow_trigger.example.py config/flow_trigger.py
-cp 用于注册的邮箱.example.txt 用于注册的邮箱.txt
 ```
 
 ### 配置
@@ -168,18 +164,6 @@ foo@hotmail.com:pwd123::M.C527_BAY.0.U.xxx:9e5f94bc-e8a4-4e73-b8be-63364c29d753:
 | `name_invalid_chars` | 显示名含非法字符 | available |
 | 网络层错误(SSL/Timeout/Proxy) | 临时性 | 自动重试 8 次,退避 2^n 秒 |
 | 创建接口已通过,后续失败 | 远端已消耗邮箱 | **failed**(永久) |
-
-## 🛡️ 安全提示
-
-**绝对不要把以下文件提交到 git:**
-
-- `用于注册的邮箱.json` / `用于注册的邮箱.txt` — 含 password / refresh_token
-- `注册成功的邮箱.json` / `注册成功的邮箱.txt` / `注册成功的token.txt` — 含 access_token
-- `accounts/` — 每个批次的归档目录,含完整账号信息
-- `注册日志/` — 可能含敏感请求体
-- `config/proxy.py` 里的真实代理凭据
-
-仓库根目录已经有 `.gitignore` 排除以上文件。**首次 clone 后请自行准备这些文件**,不要从公开 fork 中复制。
 
 ## 📜 许可
 

@@ -1,0 +1,3 @@
+# 输入邮箱池
+# 每行一条,4 段用 ---- 分隔(顺序固定):
+# email----password----client_id----refresh_token

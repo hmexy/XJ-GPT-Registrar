@@ -1,13 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-注册成功后的"自动触发 flow"配置 · 模板。
+注册成功后的"自动触发 flow"配置。
 
-⚠️ 真正的凭据请填到本地 config/flow_trigger.py(已被 .gitignore 排除),
-不要直接修改本文件然后提交。
-
-部署/复刻流程:
-    cp config/flow_trigger.example.py config/flow_trigger.py
-    # 编辑 config/flow_trigger.py 填入实际值
+⚠️ 这里的值是占位模板,请填入你自己的真实凭据后再启用 flow 功能。
+   ENABLE_FLOW_TRIGGER 默认 False,不启用时本文件的值不会被使用。
 """
 
 # 总开关:False 则跳过整个 flow 调用
