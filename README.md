@@ -62,14 +62,14 @@
 ### 安装
 
 ```bash
-git clone <repo_url>
+git clone https://github.com/hmexy/XJ-GPT-Registrar.git
 cd XJ-GPT-Registrar
 pip install -r requirements.txt
 ```
 
 ### 配置
 
-1. 在 [config/proxy.py](config/proxy.py) 里填上你的代理(默认 `http://127.0.0.1:2080`,可改成代理池)
+1. 在 [config/proxy.py](config/proxy.py) 里填上你的代理(默认 `http://127.0.0.1:7890`,可改成代理池)
 2. 如果用 Outlook 自动取件:把邮箱按下面格式存到 `用于注册的邮箱.json`,程序会按 status=available 自动抽取
 3. (可选)在 [config/twofa.py](config/twofa.py) 里设置 `ENABLE_2FA=True` 启用自动 TOTP 设置
 
