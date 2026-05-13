@@ -121,16 +121,17 @@
       <h2>代理设置</h2>
       <label>代理 URL</label>
       <input type="text" id="proxy-url" placeholder="http://127.0.0.1:7890">
-      <div class="hint">支持 <code>http</code> / <code>https</code> / <code>socks5</code> / <code>socks5h</code>。留空 + 点应用 = 直连。</div>
+      <div class="hint">支持 <code>http</code> / <code>https</code> / <code>socks5</code> / <code>socks5h</code>。留空保存 = 直连。</div>
       <div class="row" style="margin-top:10px;">
         <div style="flex:1;">
-          <button id="apply-proxy" style="width:100%;padding:8px;background:#3c3c3c;color:#d4d4d4;border:none;border-radius:4px;cursor:pointer;font-size:13px;">应用</button>
+          <button id="test-proxy" style="width:100%;padding:8px;background:#3c3c3c;color:#d4d4d4;border:none;border-radius:4px;cursor:pointer;font-size:13px;">测试连通性</button>
         </div>
         <div style="flex:1;">
-          <button id="reset-proxy" style="width:100%;padding:8px;background:#3c3c3c;color:#d4d4d4;border:none;border-radius:4px;cursor:pointer;font-size:13px;">恢复默认</button>
+          <button id="apply-proxy" style="width:100%;padding:8px;background:#007acc;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:13px;font-weight:600;">应用并保存</button>
         </div>
       </div>
       <div class="hint" id="proxy-status" style="margin-top:8px;">当前生效: 读取中…</div>
+      <div class="hint" id="proxy-test-result" style="margin-top:4px;"></div>
     </div>
 
     <div class="panel">
@@ -239,6 +240,7 @@ $('clear-log').addEventListener('click', () => { logEl.textContent = ''; });
 // ============ 代理设置 ============
 const proxyInput = $('proxy-url');
 const proxyStatus = $('proxy-status');
+const proxyTestResult = $('proxy-test-result');
 
 async function refreshProxyStatus() {
   try {
@@ -246,20 +248,21 @@ async function refreshProxyStatus() {
     const d = await r.json();
     const eff = d.effective || '(直连)';
     const overrideTag = d.override === null
-      ? `<span style="color:#888;">[默认池]</span>`
-      : `<span style="color:#4ec9b0;">[已覆盖]</span>`;
+      ? `<span style="color:#888;">[文件默认]</span>`
+      : `<span style="color:#4ec9b0;">[runtime 覆盖]</span>`;
     proxyStatus.innerHTML = `当前生效: <code>${eff}</code> ${overrideTag}`;
-    if (d.override !== null && !proxyInput.value) proxyInput.value = d.override;
-    else if (d.override === null && !proxyInput.value && d.pool && d.pool.length) {
-      proxyInput.placeholder = d.pool[0];
+    if (!proxyInput.value) {
+      proxyInput.value = d.override || (d.pool && d.pool[0]) || '';
     }
   } catch (e) {
     proxyStatus.textContent = '读取代理状态失败: ' + e;
   }
 }
 
-async function postProxy(value) {
+async function applyProxy() {
   showError('');
+  proxyTestResult.textContent = '';
+  const value = proxyInput.value.trim();
   const r = await fetch('/api/proxy', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -267,18 +270,42 @@ async function postProxy(value) {
   });
   const d = await r.json();
   if (!r.ok || !d.ok) {
-    showError('代理设置失败: ' + (d.error || ('HTTP ' + r.status)));
-    return false;
+    showError('保存失败: ' + (d.error || ('HTTP ' + r.status)));
+    return;
   }
+  proxyTestResult.innerHTML = `<span style="color:#4ec9b0;">✓ 已保存到 config/proxy.py 并立即生效</span>`;
   await refreshProxyStatus();
-  return true;
 }
 
-$('apply-proxy').addEventListener('click', () => postProxy(proxyInput.value));
-$('reset-proxy').addEventListener('click', async () => {
-  proxyInput.value = '';
-  await postProxy(null);
-});
+async function testProxy() {
+  showError('');
+  proxyTestResult.innerHTML = '<span style="color:#dcdcaa;">测试中…(最长 10s)</span>';
+  const value = proxyInput.value.trim();
+  try {
+    const r = await fetch('/api/proxy/test', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({proxy: value}),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      const ipPart = d.ip ? `, 出口 IP: <code>${d.ip}</code>` : '';
+      const locPart = d.loc ? `, 地区: <code>${d.loc}</code>` : '';
+      const coloPart = d.colo ? ` <span style="color:#888;">(CF ${d.colo})</span>` : '';
+      proxyTestResult.innerHTML =
+        `<span style="color:#4ec9b0;">✓ 连通 ${d.elapsed_ms}ms${ipPart}${locPart}${coloPart}</span>`;
+    } else {
+      const err = d.error || `HTTP ${d.http_status}`;
+      proxyTestResult.innerHTML =
+        `<span style="color:#f48771;">✗ 失败 (${d.elapsed_ms}ms): ${err}</span>`;
+    }
+  } catch (e) {
+    proxyTestResult.innerHTML = `<span style="color:#f48771;">✗ 请求异常: ${e}</span>`;
+  }
+}
+
+$('apply-proxy').addEventListener('click', applyProxy);
+$('test-proxy').addEventListener('click', testProxy);
 
 refreshProxyStatus();
 

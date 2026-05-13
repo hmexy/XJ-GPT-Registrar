@@ -13,10 +13,12 @@ import argparse
 import json
 import logging
 import queue
+import re
 import threading
 import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import datetime
+from pathlib import Path
 from urllib.parse import urlparse
 
 from flask import Flask, Response, jsonify, render_template, request
@@ -283,6 +285,16 @@ def api_status():
 
 _ALLOWED_PROXY_SCHEMES = {"http", "https", "socks5", "socks5h"}
 
+# 持久化写 config/proxy.py 时用的锁,避免并发写覆盖
+_PERSIST_LOCK = threading.Lock()
+
+# config/proxy.py 路径(用于持久化)
+_PROXY_CONFIG_PATH = Path(__file__).resolve().parent / "config" / "proxy.py"
+
+# 连通性测试的探活目标(同时也是注册流程的真实域)
+_PROBE_URL = "https://chatgpt.com/cdn-cgi/trace"
+_PROBE_TIMEOUT = 10
+
 
 def _validate_proxy_url(raw: str) -> str:
     """校验代理 URL,返回 normalized 值。空串表示直连,允许通过。"""
@@ -304,6 +316,74 @@ def _validate_proxy_url(raw: str) -> str:
     return s
 
 
+def _persist_proxy_pool(new_pool: list[str]) -> None:
+    """
+    把新的 PROXY_POOL 列表持久化到 config/proxy.py,并同步更新内存中的列表。
+
+    用正则替换文件里的 `PROXY_POOL = [...]` 块。原子写入(.tmp + rename)。
+    并发安全:通过 _PERSIST_LOCK 串行化。
+    """
+    if new_pool:
+        entries = "\n".join(f'    "{p}",' for p in new_pool)
+        new_block = "PROXY_POOL = [\n" + entries + "\n]"
+    else:
+        new_block = "PROXY_POOL = []"
+
+    with _PERSIST_LOCK:
+        text = _PROXY_CONFIG_PATH.read_text(encoding="utf-8")
+        pattern = r"PROXY_POOL\s*=\s*\[[\s\S]*?\]"
+        new_text, n = re.subn(pattern, new_block, text, count=1)
+        if n != 1:
+            raise RuntimeError(
+                "无法在 config/proxy.py 中找到 PROXY_POOL = [...] 块"
+            )
+        tmp = _PROXY_CONFIG_PATH.with_suffix(".py.tmp")
+        tmp.write_text(new_text, encoding="utf-8")
+        tmp.replace(_PROXY_CONFIG_PATH)
+
+        # 同步更新内存中的列表(用 slice 赋值保证所有持有引用的代码都能看到新值)
+        proxy_config.PROXY_POOL[:] = new_pool
+
+
+def _probe_proxy(proxy_url: str, timeout: int = _PROBE_TIMEOUT) -> dict:
+    """
+    用 curl_cffi(impersonate 同主流程)访问 chatgpt.com 的 trace 端点,
+    返回连通性 + 出口 IP + Cloudflare 机房代码。proxy_url=='' 表示直连。
+    """
+    from curl_cffi.requests import Session
+
+    s = Session(impersonate="chrome142")
+    if proxy_url:
+        s.proxies = {"http": proxy_url, "https": proxy_url}
+    s.timeout = timeout
+
+    t0 = time.time()
+    try:
+        resp = s.get(_PROBE_URL)
+        elapsed = (time.time() - t0) * 1000
+        info: dict[str, str] = {}
+        for line in (resp.text or "").splitlines():
+            if "=" in line:
+                k, v = line.split("=", 1)
+                info[k.strip()] = v.strip()
+        return {
+            "ok": resp.status_code == 200,
+            "http_status": resp.status_code,
+            "elapsed_ms": round(elapsed),
+            "ip": info.get("ip"),
+            "loc": info.get("loc"),
+            "colo": info.get("colo"),
+        }
+    except Exception as exc:
+        elapsed = (time.time() - t0) * 1000
+        return {
+            "ok": False,
+            "http_status": None,
+            "elapsed_ms": round(elapsed),
+            "error": f"{type(exc).__name__}: {str(exc)[:200]}",
+        }
+
+
 @app.route("/api/proxy", methods=["GET"])
 def api_proxy_get():
     return jsonify({
@@ -321,21 +401,58 @@ def api_proxy_set():
 
     val = data["proxy"]
     if val is None:
+        # 仅清除运行时覆盖,不动 PROXY_POOL 也不动文件
         proxy_config.set_runtime_proxy(None)
         logger.info("[代理] 已清除 runtime override,恢复 PROXY_POOL 抽取")
-    else:
-        try:
-            normalized = _validate_proxy_url(str(val))
-        except ValueError as exc:
-            return jsonify({"ok": False, "error": str(exc)}), 400
-        proxy_config.set_runtime_proxy(normalized)
-        logger.info(f"[代理] runtime override 已设置为: {normalized or '(直连)'}")
+        return jsonify({
+            "ok": True,
+            "override": proxy_config.get_runtime_proxy(),
+            "effective": proxy_config.pick_proxy(),
+            "persisted": False,
+        })
+
+    try:
+        normalized = _validate_proxy_url(str(val))
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+    # 先持久化:失败则完全不改运行时状态,保持原子性
+    new_pool = [normalized] if normalized else []
+    try:
+        _persist_proxy_pool(new_pool)
+    except Exception as exc:
+        logger.exception("[代理] 持久化失败")
+        return jsonify({"ok": False, "error": f"写入 config/proxy.py 失败: {exc}"}), 500
+
+    # 持久化成功后再设置 runtime override 让当前会话立即生效
+    proxy_config.set_runtime_proxy(normalized)
+    logger.info(f"[代理] 已设置并持久化: {normalized or '(直连)'}")
 
     return jsonify({
         "ok": True,
         "override": proxy_config.get_runtime_proxy(),
         "effective": proxy_config.pick_proxy(),
+        "persisted": True,
     })
+
+
+@app.route("/api/proxy/test", methods=["POST"])
+def api_proxy_test():
+    """
+    测试代理连通性。body 里给 proxy 字段就测那个值,不给就测当前 effective。
+    """
+    data = request.get_json(silent=True) or {}
+    if "proxy" in data and data["proxy"] is not None:
+        try:
+            proxy_url = _validate_proxy_url(str(data["proxy"]))
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+    else:
+        proxy_url = proxy_config.pick_proxy()
+
+    result = _probe_proxy(proxy_url)
+    result["proxy_used"] = proxy_url or "(直连)"
+    return jsonify(result)
 
 
 @app.route("/api/start", methods=["POST"])
