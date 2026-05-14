@@ -1,87 +1,302 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <title>XJ-GPT 协议注册机</title>
 <style>
+  :root {
+    /* —— 暗色（默认）—— */
+    --bg:          #1e1e1e;
+    --bg-elev:     #252526;
+    --bg-input:    #1b1b1b;
+    --bg-hover:    #2d2d30;
+    --border:      #3c3c3c;
+    --border-soft: #2a2a2c;
+    --fg:          #d4d4d4;
+    --fg-strong:   #ffffff;
+    --fg-muted:    #8a8a8a;
+    --accent:      #4aa3ff;
+    --accent-hover:#69b6ff;
+    --accent-soft: #9cdcfe;
+    --ok:          #4ec9b0;
+    --warn:        #dcdcaa;
+    --err:         #f48771;
+    --err-bg:      #5a1d1d;
+    --shadow:      0 1px 2px rgba(0,0,0,0.4);
+    --code-bg:     rgba(255,255,255,0.06);
+  }
+  html[data-theme="light"] {
+    --bg:          #f4f6f8;
+    --bg-elev:     #ffffff;
+    --bg-input:    #ffffff;
+    --bg-hover:    #f0f2f5;
+    --border:      #d0d7de;
+    --border-soft: #e6e8eb;
+    --fg:          #1f2328;
+    --fg-strong:   #0a0c10;
+    --fg-muted:    #6e7681;
+    --accent:      #0969da;
+    --accent-hover:#0550ae;
+    --accent-soft: #0969da;
+    --ok:          #1a7f37;
+    --warn:        #9a6700;
+    --err:         #cf222e;
+    --err-bg:      #ffebe9;
+    --shadow:      0 1px 3px rgba(31,35,40,0.08);
+    --code-bg:     rgba(175,184,193,0.18);
+  }
+
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
-    margin: 0; padding: 20px; background: #1e1e1e; color: #d4d4d4;
+    margin: 0; padding: 20px;
+    background: var(--bg);
+    color: var(--fg);
+    transition: background 0.2s ease, color 0.2s ease;
   }
-  h1 { font-size: 20px; margin: 0 0 16px; color: #fff; }
-  .layout { display: grid; grid-template-columns: 420px 1fr; gap: 20px; max-width: 1600px; }
+
+  /* —— 顶部栏 —— */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  h1 {
+    font-size: 20px; margin: 0; color: var(--fg-strong);
+    font-weight: 600; letter-spacing: 0.2px;
+  }
+  h1 .sub { color: var(--fg-muted); font-weight: 400; font-size: 14px; margin-left: 8px; }
+
+  .theme-toggle {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    color: var(--fg);
+    border-radius: 999px;
+    padding: 6px 14px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.15s ease;
+  }
+  .theme-toggle:hover { background: var(--bg-hover); border-color: var(--accent); }
+  .theme-toggle svg { width: 14px; height: 14px; }
+
+  /* —— 布局 —— */
+  .layout { display: grid; grid-template-columns: 440px 1fr; gap: 20px; max-width: 1700px; }
+  @media (max-width: 1100px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+
   .panel {
-    background: #252526; border: 1px solid #3c3c3c; border-radius: 6px;
-    padding: 16px; margin-bottom: 16px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 14px;
+    box-shadow: var(--shadow);
+    transition: background 0.2s ease, border-color 0.2s ease;
   }
   .panel h2 {
-    font-size: 13px; margin: 0 0 12px; color: #9cdcfe;
-    text-transform: uppercase; letter-spacing: 0.5px;
+    font-size: 11px; margin: 0 0 12px;
+    color: var(--accent-soft);
+    text-transform: uppercase; letter-spacing: 1px;
+    display: flex; align-items: center; gap: 8px;
   }
-  label { display: block; font-size: 13px; margin-bottom: 6px; color: #cccccc; }
+  .panel h2::before {
+    content: ""; width: 3px; height: 12px; border-radius: 2px;
+    background: var(--accent);
+  }
+
+  label {
+    display: block; font-size: 12px; margin-bottom: 6px;
+    color: var(--fg); font-weight: 500;
+  }
+
+  /* —— 输入控件 —— */
   input[type=text], input[type=number], textarea {
-    width: 100%; background: #1e1e1e; color: #d4d4d4;
-    border: 1px solid #3c3c3c; border-radius: 4px; padding: 8px;
-    font-family: Consolas, "Courier New", monospace; font-size: 13px;
+    width: 100%;
+    background: var(--bg-input);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-family: "JetBrains Mono", Consolas, "Courier New", monospace;
+    font-size: 13px;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
   }
-  textarea { resize: vertical; min-height: 180px; }
-  input:focus, textarea:focus { outline: none; border-color: #007acc; }
+  textarea { resize: vertical; min-height: 180px; line-height: 1.5; }
+  input:focus, textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+  }
+
   .row { display: flex; gap: 12px; }
   .row > div { flex: 1; }
-  .radio-group { display: flex; gap: 16px; margin-bottom: 12px; }
+
+  /* —— 单选 / 复选 —— */
+  .radio-group { display: flex; gap: 8px; margin-bottom: 12px; }
   .radio-group label {
-    display: flex; align-items: center; gap: 6px; cursor: pointer; margin: 0;
+    flex: 1;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    cursor: pointer; margin: 0;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 12px;
+    transition: all 0.15s ease;
+    background: var(--bg-input);
   }
-  button#start {
-    width: 100%; padding: 10px; background: #007acc; color: #fff;
-    border: none; border-radius: 4px; font-size: 14px; cursor: pointer;
+  .radio-group label:hover { border-color: var(--accent); }
+  .radio-group input[type=radio] {
+    accent-color: var(--accent);
+  }
+  .radio-group label:has(input:checked) {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, var(--bg-input));
+    color: var(--fg-strong);
+  }
+  .check-row {
+    display: flex; align-items: center; gap: 6px;
+    margin-top: 12px; font-size: 13px; cursor: pointer;
+  }
+  .check-row input { accent-color: var(--accent); }
+
+  /* —— 按钮 —— */
+  .btn {
+    width: 100%;
+    padding: 8px 12px;
+    background: var(--bg-input);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-family: inherit;
+    transition: all 0.15s ease;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .btn:hover:not(:disabled) {
+    background: var(--bg-hover);
+    border-color: var(--accent);
+    color: var(--fg-strong);
+  }
+  .btn--primary {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
     font-weight: 600;
   }
-  button#start:hover:not(:disabled) { background: #1e8fd6; }
-  button#start:disabled { background: #555; cursor: not-allowed; }
+  .btn--primary:hover:not(:disabled) {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+    color: #fff;
+  }
+  .btn--lg { padding: 11px; font-size: 14px; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn--xs { padding: 4px 10px; font-size: 12px; width: auto; }
+
+  /* —— 统计卡 —— */
   .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
   .stat-card {
-    background: #1e1e1e; padding: 10px; border-radius: 4px;
-    border: 1px solid #3c3c3c; text-align: center;
+    background: var(--bg-input);
+    padding: 12px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border-soft);
+    text-align: center;
+    transition: transform 0.15s ease, border-color 0.15s ease;
   }
-  .stat-card .num { font-size: 22px; font-weight: 600; }
-  .stat-card .lbl { font-size: 11px; color: #888; margin-top: 2px; }
-  .stat-card.success .num { color: #4ec9b0; }
-  .stat-card.failed .num { color: #f48771; }
-  .stat-card.target .num { color: #9cdcfe; }
-  .stat-card.done .num { color: #dcdcaa; }
+  .stat-card:hover { transform: translateY(-1px); border-color: var(--border); }
+  .stat-card .num { font-size: 22px; font-weight: 700; line-height: 1.1; }
+  .stat-card .lbl { font-size: 11px; color: var(--fg-muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat-card.success .num { color: var(--ok); }
+  .stat-card.failed .num  { color: var(--err); }
+  .stat-card.target .num  { color: var(--accent-soft); }
+  .stat-card.done .num    { color: var(--warn); }
 
+  /* —— 日志面板 —— */
+  .log-toolbar {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 10px; font-size: 12px;
+  }
+  .log-toolbar h2 { margin: 0; flex: 0 0 auto; }
+  .log-toolbar label { margin: 0; }
   #log {
-    background: #1e1e1e; border: 1px solid #3c3c3c; border-radius: 4px;
-    padding: 12px; font-family: Consolas, "Courier New", monospace;
-    font-size: 12px; line-height: 1.5; color: #d4d4d4;
-    height: calc(100vh - 100px); overflow-y: auto;
+    background: var(--bg-input);
+    border: 1px solid var(--border-soft);
+    border-radius: 6px;
+    padding: 12px 14px;
+    font-family: "JetBrains Mono", Consolas, "Courier New", monospace;
+    font-size: 12px; line-height: 1.55;
+    color: var(--fg);
+    height: calc(100vh - 130px); overflow-y: auto;
     white-space: pre-wrap; word-break: break-all;
+    margin: 0;
   }
   .log-line { margin: 0; }
-  .log-line.error { color: #f48771; }
-  .log-line.warn  { color: #dcdcaa; }
-  .log-line.info  { color: #d4d4d4; }
-  .log-line.debug { color: #888; }
-  .log-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; font-size: 12px; }
+  .log-line.error { color: var(--err); }
+  .log-line.warn  { color: var(--warn); }
+  .log-line.info  { color: var(--fg); }
+  .log-line.debug { color: var(--fg-muted); }
+
+  /* —— 杂项 —— */
   .badge {
-    display: inline-block; padding: 2px 8px; border-radius: 10px;
-    font-size: 11px; background: #3c3c3c;
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 10px;
+    background: var(--bg-hover);
+    color: var(--fg-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
   }
-  .badge.running { background: #007acc; color: #fff; }
-  .badge.idle { background: #3c3c3c; color: #888; }
-  .hint { font-size: 11px; color: #888; margin-top: 4px; }
+  .badge.running {
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+    color: var(--accent);
+  }
+  .badge.idle { background: var(--bg-hover); color: var(--fg-muted); }
+  .badge.done { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok); }
+
+  .hint { font-size: 11px; color: var(--fg-muted); margin-top: 4px; line-height: 1.6; }
   .err-banner {
-    background: #5a1d1d; color: #f48771; padding: 8px 12px;
-    border-radius: 4px; margin-bottom: 12px; font-size: 12px;
+    background: var(--err-bg);
+    color: var(--err);
+    padding: 8px 12px;
+    border-radius: 6px;
+    margin-bottom: 12px;
+    font-size: 12px;
     display: none;
   }
+  code {
+    background: var(--code-bg);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 11.5px;
+  }
+  .ok-text  { color: var(--ok); }
+  .warn-text{ color: var(--warn); }
+  .err-text { color: var(--err); }
+
+  /* SSE 状态指示器 */
+  .sse-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; background: var(--fg-muted); }
+  .sse-dot.live { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+  .sse-dot.reconnect { background: var(--warn); }
 </style>
 </head>
 <body>
 
-<h1>XJ-GPT 协议注册机 · Web GUI</h1>
+<header>
+  <h1>XJ-GPT 协议注册机 <span class="sub">· Web GUI</span></h1>
+  <button id="theme-toggle" class="theme-toggle" title="切换主题">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round" id="theme-icon">
+      <!-- moon by default -->
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+    </svg>
+    <span id="theme-label">暗色</span>
+  </button>
+</header>
 
 <div class="layout">
   <!-- 左列:控制 -->
@@ -93,8 +308,8 @@
         <label><input type="radio" name="mode" value="manual"> 手动粘贴邮箱</label>
       </div>
       <div id="manual-box" style="display:none;">
-        <label>邮箱列表(每行一个)</label>
-        <textarea id="emails" placeholder="支持两种格式,自动识别:&#10;1) email----password----client_id----refresh_token&#10;2) email:password::refresh_token:client_id::refresh_token&#10;每行一个"></textarea>
+        <label>邮箱列表（每行一个）</label>
+        <textarea id="emails" placeholder="支持两种格式，自动识别：&#10;1) email----password----client_id----refresh_token&#10;2) email:password::refresh_token:client_id::refresh_token&#10;每行一个"></textarea>
         <div class="hint" id="email-count">0 行</div>
       </div>
       <div id="outlook-hint" class="hint">从 <code>用于注册的邮箱.json</code> 中按 status=available 自动抽取</div>
@@ -112,7 +327,7 @@
           <input type="number" id="workers" value="1" min="1">
         </div>
       </div>
-      <label style="margin-top:12px;">
+      <label class="check-row">
         <input type="checkbox" id="continue-on-fail" checked> 单个失败后继续
       </label>
     </div>
@@ -123,41 +338,41 @@
       <input type="text" id="proxy-url" placeholder="http://127.0.0.1:7890">
       <div class="hint">支持 <code>http</code> / <code>https</code> / <code>socks5</code> / <code>socks5h</code>。留空保存 = 直连。</div>
       <div class="row" style="margin-top:10px;">
-        <div style="flex:1;">
-          <button id="test-proxy" style="width:100%;padding:8px;background:#3c3c3c;color:#d4d4d4;border:none;border-radius:4px;cursor:pointer;font-size:13px;">测试连通性</button>
-        </div>
-        <div style="flex:1;">
-          <button id="apply-proxy" style="width:100%;padding:8px;background:#007acc;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:13px;font-weight:600;">应用并保存</button>
-        </div>
+        <div><button id="test-proxy"  class="btn">测试连通性</button></div>
+        <div><button id="detect-geo"  class="btn">检测出口地区</button></div>
+        <div><button id="apply-proxy" class="btn btn--primary">应用并保存</button></div>
       </div>
-      <div class="hint" id="proxy-status" style="margin-top:8px;">当前生效: 读取中…</div>
-      <div class="hint" id="proxy-test-result" style="margin-top:4px;"></div>
+      <div class="hint" id="proxy-status" style="margin-top:10px;">当前生效: 读取中…</div>
+      <div class="hint" id="proxy-test-result"></div>
+      <div class="hint" id="geo-result"></div>
     </div>
 
     <div class="panel">
       <div id="err-banner" class="err-banner"></div>
-      <button id="start">开始注册</button>
+      <button id="start" class="btn btn--primary btn--lg">开始注册</button>
     </div>
 
     <div class="panel">
       <h2>状态 <span id="run-badge" class="badge idle">闲置</span></h2>
       <div class="stats">
         <div class="stat-card target"><div class="num" id="s-target">0</div><div class="lbl">目标</div></div>
-        <div class="stat-card done"><div class="num" id="s-done">0</div><div class="lbl">已完成</div></div>
+        <div class="stat-card done">  <div class="num" id="s-done">0</div>  <div class="lbl">已完成</div></div>
         <div class="stat-card success"><div class="num" id="s-success">0</div><div class="lbl">成功</div></div>
-        <div class="stat-card failed"><div class="num" id="s-failed">0</div><div class="lbl">失败</div></div>
+        <div class="stat-card failed"> <div class="num" id="s-failed">0</div> <div class="lbl">失败</div></div>
       </div>
-      <div class="hint" id="last-error" style="color:#f48771;margin-top:8px;"></div>
+      <div class="hint err-text" id="last-error" style="margin-top:10px;"></div>
     </div>
   </div>
 
   <!-- 右列:日志 -->
   <div class="panel" style="margin:0;">
     <div class="log-toolbar">
-      <h2 style="margin:0;flex:0;">实时日志</h2>
-      <label style="margin:0;"><input type="checkbox" id="autoscroll" checked> 自动滚动</label>
-      <button id="clear-log" style="padding:4px 10px;background:#3c3c3c;color:#d4d4d4;border:none;border-radius:3px;cursor:pointer;font-size:12px;">清空</button>
-      <span class="hint" id="sse-status" style="margin-left:auto;">未连接</span>
+      <h2>实时日志</h2>
+      <label><input type="checkbox" id="autoscroll" checked> 自动滚动</label>
+      <button id="clear-log" class="btn btn--xs">清空</button>
+      <span class="hint" id="sse-status" style="margin-left:auto;display:inline-flex;align-items:center;">
+        <span class="sse-dot" id="sse-dot"></span>未连接
+      </span>
     </div>
     <pre id="log"></pre>
   </div>
@@ -165,6 +380,52 @@
 
 <script>
 const $ = (id) => document.getElementById(id);
+
+// ============ 主题切换 ============
+const THEME_KEY = 'xjgpt-theme';
+const themeBtn = $('theme-toggle');
+const themeLabel = $('theme-label');
+const themeIcon = $('theme-icon');
+
+const MOON_PATH = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
+const SUN_PATH  = '<circle cx="12" cy="12" r="4"/>' +
+                  '<line x1="12" y1="2"  x2="12" y2="4"/>' +
+                  '<line x1="12" y1="20" x2="12" y2="22"/>' +
+                  '<line x1="2"  y1="12" x2="4"  y2="12"/>' +
+                  '<line x1="20" y1="12" x2="22" y2="12"/>' +
+                  '<line x1="4.93" y1="4.93"   x2="6.34" y2="6.34"/>' +
+                  '<line x1="17.66" y1="17.66" x2="19.07" y2="19.07"/>' +
+                  '<line x1="4.93" y1="19.07"  x2="6.34" y2="17.66"/>' +
+                  '<line x1="17.66" y1="6.34"  x2="19.07" y2="4.93"/>';
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  if (theme === 'light') {
+    themeIcon.innerHTML = SUN_PATH;
+    themeLabel.textContent = '浅色';
+  } else {
+    themeIcon.innerHTML = MOON_PATH;
+    themeLabel.textContent = '暗色';
+  }
+}
+
+(function initTheme() {
+  let saved = localStorage.getItem(THEME_KEY);
+  if (!saved) {
+    saved = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches
+      ? 'light' : 'dark';
+  }
+  applyTheme(saved);
+})();
+
+themeBtn.addEventListener('click', () => {
+  const current = document.documentElement.getAttribute('data-theme') || 'dark';
+  const next = current === 'dark' ? 'light' : 'dark';
+  applyTheme(next);
+  localStorage.setItem(THEME_KEY, next);
+});
+
+// ============ 模式切换 ============
 const modeRadios = document.querySelectorAll('input[name="mode"]');
 const manualBox = $('manual-box');
 const outlookHint = $('outlook-hint');
@@ -175,11 +436,11 @@ const errBanner = $('err-banner');
 const logEl = $('log');
 const autoscroll = $('autoscroll');
 const sseStatus = $('sse-status');
+const sseDot = $('sse-dot');
 
 function currentMode() {
   return document.querySelector('input[name="mode"]:checked').value;
 }
-
 function updateModeUI() {
   const m = currentMode();
   manualBox.style.display = m === 'manual' ? 'block' : 'none';
@@ -198,6 +459,7 @@ function showError(msg) {
   errBanner.style.display = msg ? 'block' : 'none';
 }
 
+// ============ 开始注册 ============
 startBtn.addEventListener('click', async () => {
   showError('');
   const mode = currentMode();
@@ -210,7 +472,7 @@ startBtn.addEventListener('click', async () => {
   if (!workers || workers < 1) { showError('并发必须 >= 1'); return; }
   if (mode === 'manual') {
     const n = emails.split('\n').filter(l => l.trim()).length;
-    if (n < count) { showError(`手动模式需要至少 ${count} 行邮箱,当前 ${n} 行`); return; }
+    if (n < count) { showError(`手动模式需要至少 ${count} 行邮箱，当前 ${n} 行`); return; }
   }
 
   startBtn.disabled = true;
@@ -248,8 +510,8 @@ async function refreshProxyStatus() {
     const d = await r.json();
     const eff = d.effective || '(直连)';
     const overrideTag = d.override === null
-      ? `<span style="color:#888;">[文件默认]</span>`
-      : `<span style="color:#4ec9b0;">[runtime 覆盖]</span>`;
+      ? `<span style="color:var(--fg-muted);">[文件默认]</span>`
+      : `<span class="ok-text">[runtime 覆盖]</span>`;
     proxyStatus.innerHTML = `当前生效: <code>${eff}</code> ${overrideTag}`;
     if (!proxyInput.value) {
       proxyInput.value = d.override || (d.pool && d.pool[0]) || '';
@@ -273,13 +535,14 @@ async function applyProxy() {
     showError('保存失败: ' + (d.error || ('HTTP ' + r.status)));
     return;
   }
-  proxyTestResult.innerHTML = `<span style="color:#4ec9b0;">✓ 已保存到 config/proxy.py 并立即生效</span>`;
+  proxyTestResult.innerHTML = `<span class="ok-text">✓ 已保存到 config/proxy.py 并立即生效</span>`;
   await refreshProxyStatus();
+  detectGeo();
 }
 
 async function testProxy() {
   showError('');
-  proxyTestResult.innerHTML = '<span style="color:#dcdcaa;">测试中…(最长 10s)</span>';
+  proxyTestResult.innerHTML = '<span class="warn-text">测试中…（最长 10s）</span>';
   const value = proxyInput.value.trim();
   try {
     const r = await fetch('/api/proxy/test', {
@@ -291,28 +554,64 @@ async function testProxy() {
     if (d.ok) {
       const ipPart = d.ip ? `, 出口 IP: <code>${d.ip}</code>` : '';
       const locPart = d.loc ? `, 地区: <code>${d.loc}</code>` : '';
-      const coloPart = d.colo ? ` <span style="color:#888;">(CF ${d.colo})</span>` : '';
+      const coloPart = d.colo ? ` <span style="color:var(--fg-muted);">(CF ${d.colo})</span>` : '';
       proxyTestResult.innerHTML =
-        `<span style="color:#4ec9b0;">✓ 连通 ${d.elapsed_ms}ms${ipPart}${locPart}${coloPart}</span>`;
+        `<span class="ok-text">✓ 连通 ${d.elapsed_ms}ms${ipPart}${locPart}${coloPart}</span>`;
     } else {
       const err = d.error || `HTTP ${d.http_status}`;
       proxyTestResult.innerHTML =
-        `<span style="color:#f48771;">✗ 失败 (${d.elapsed_ms}ms): ${err}</span>`;
+        `<span class="err-text">✗ 失败 (${d.elapsed_ms}ms): ${err}</span>`;
     }
   } catch (e) {
-    proxyTestResult.innerHTML = `<span style="color:#f48771;">✗ 请求异常: ${e}</span>`;
+    proxyTestResult.innerHTML = `<span class="err-text">✗ 请求异常: ${e}</span>`;
   }
 }
 
 $('apply-proxy').addEventListener('click', applyProxy);
 $('test-proxy').addEventListener('click', testProxy);
 
+// ============ 出口地区检测 ============
+const geoResult = $('geo-result');
+
+async function detectGeo() {
+  showError('');
+  geoResult.innerHTML = '<span class="warn-text">检测中…（最长 5s）</span>';
+  const value = proxyInput.value.trim();
+  const body = value === '' ? {} : {proxy: value};
+  try {
+    const r = await fetch('/api/geo/detect', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (!r.ok || !d.ok) {
+      geoResult.innerHTML = `<span class="err-text">✗ 检测失败: ${d.error || ('HTTP ' + r.status)}</span>`;
+      return;
+    }
+    const country = d.country || '??';
+    const flag = d.blocked
+      ? `<span class="err-text" style="font-weight:600;">⚠ ${country} (OpenAI 屏蔽地区，无法注册!)</span>`
+      : `<span class="ok-text" style="font-weight:600;">${country}</span>`;
+    geoResult.innerHTML =
+      `出口: ${flag} · ` +
+      `时区: <code>${d.tz_name || '?'}</code> (${d.tz_string}) · ` +
+      `语言: <code>${d.language}</code>` +
+      `<br><span class="hint">下一次注册的指纹会自动用以上配置（Date.toString / Accept-Language / navigator.language 全部对齐 IP 地理位置）</span>`;
+  } catch (e) {
+    geoResult.innerHTML = `<span class="err-text">✗ 请求异常: ${e}</span>`;
+  }
+}
+
+$('detect-geo').addEventListener('click', detectGeo);
+
 refreshProxyStatus();
 
+// ============ 日志 SSE ============
 function classify(line) {
-  if (/\[ERROR\]/.test(line)) return 'error';
+  if (/\[ERROR\]/.test(line))   return 'error';
   if (/\[WARNING\]/.test(line)) return 'warn';
-  if (/\[DEBUG\]/.test(line)) return 'debug';
+  if (/\[DEBUG\]/.test(line))   return 'debug';
   return 'info';
 }
 
@@ -325,11 +624,17 @@ function appendLog(line) {
   if (autoscroll.checked) logEl.scrollTop = logEl.scrollHeight;
 }
 
+function setSseStatus(state, text) {
+  sseDot.className = 'sse-dot ' + state;
+  // 只替换文本节点（不动 dot）
+  sseStatus.lastChild.textContent = text;
+}
+
 let es = null;
 function connectSSE() {
   es = new EventSource('/api/logs/stream');
-  es.onopen = () => { sseStatus.textContent = '已连接'; sseStatus.style.color = '#4ec9b0'; };
-  es.onerror = () => { sseStatus.textContent = '重连中…'; sseStatus.style.color = '#dcdcaa'; };
+  es.onopen  = () => setSseStatus('live',      '已连接');
+  es.onerror = () => setSseStatus('reconnect', '重连中…');
   es.onmessage = (ev) => {
     try {
       const o = JSON.parse(ev.data);
@@ -339,22 +644,28 @@ function connectSSE() {
 }
 connectSSE();
 
+// ============ 状态轮询 ============
 async function pollStatus() {
   try {
     const r = await fetch('/api/status');
     const s = await r.json();
-    $('s-target').textContent = s.target || 0;
-    $('s-done').textContent = s.done || 0;
+    $('s-target').textContent  = s.target  || 0;
+    $('s-done').textContent    = s.done    || 0;
     $('s-success').textContent = s.success || 0;
-    $('s-failed').textContent = s.failed || 0;
+    $('s-failed').textContent  = s.failed  || 0;
     const badge = $('run-badge');
     if (s.running) {
-      badge.textContent = `运行中 (${s.mode})`;
+      badge.textContent = `运行中 · ${s.mode}`;
       badge.className = 'badge running';
       startBtn.disabled = true;
       startBtn.textContent = '运行中…';
+    } else if (s.finished_at) {
+      badge.textContent = '已完成';
+      badge.className = 'badge done';
+      startBtn.disabled = false;
+      startBtn.textContent = '开始注册';
     } else {
-      badge.textContent = s.finished_at ? '已完成' : '闲置';
+      badge.textContent = '闲置';
       badge.className = 'badge idle';
       startBtn.disabled = false;
       startBtn.textContent = '开始注册';

@@ -12,108 +12,126 @@ Sentinel Token 生成模块
 """
 import json
 import time
-import math
 import random
 import base64
-import hashlib
 from datetime import datetime
+from typing import TYPE_CHECKING, Any
 
 from config import USER_AGENT, SENTINEL_SV
 
+if TYPE_CHECKING:
+    from core.session import BrowserSession
 
-def generate_fingerprint_data(device_id: str, attempt: int = 1, elapsed_ms: float = 0) -> str:
+
+# config[10] 候选：常见 navigator 原型方法的 toString 表征
+_NAVIGATOR_PROPS = [
+    "clearOriginJoinedAdInterestGroups−function clearOriginJoinedAdInterestGroups() { [native code] }",
+    "canLoadAdAuctionFencedFrame−function canLoadAdAuctionFencedFrame() { [native code] }",
+    "clipboard−[object Clipboard]",
+    "getBattery−function getBattery() { [native code] }",
+    "getGamepads−function getGamepads() { [native code] }",
+    "javaEnabled−function javaEnabled() { [native code] }",
+    "sendBeacon−function sendBeacon() { [native code] }",
+    "vibrate−function vibrate() { [native code] }",
+]
+
+
+def _date_toString(geo: dict | None) -> str:
     """
-    生成浏览器指纹数据（p字段）。
+    模拟 Chrome 的 Date.prototype.toString() 输出。
+    格式：'Sun Apr 19 2026 19:46:20 GMT+0900 (日本標準時)'
+
+    时区与括号注释必须与代理出口 IP 的 geo 一致，否则与 IP 错配 → 被风控。
+    """
+    if geo is None:
+        from config import build_default_profile
+        geo = build_default_profile()
+
+    offset_min = geo["tz_offset_minutes"]
+    # 当前 UTC 时间 + 出口时区偏移 = 出口"墙上时间"
+    now = datetime.utcfromtimestamp(time.time() + offset_min * 60)
+    return now.strftime(
+        f"%a %b %d %Y %H:%M:%S {geo['tz_string']} ({geo['tz_label']})"
+    )
+
+
+def generate_fingerprint_data(
+    device_id: str,
+    *,
+    geo: dict | None = None,
+    screen_width: int = 1920,
+    screen_height: int = 1080,
+    hardware_concurrency: int = 8,
+    attempt: int | None = None,
+    elapsed_ms: float | None = None,
+    rng: random.Random | None = None,
+) -> list:
+    """
+    生成浏览器指纹数据（p 字段）。
     对应 SDK 中 getConfig() + N() 函数。
 
-    SDK 中 getConfig() 返回的数组结构：
-    [
-        screen.width + screen.height,           # [0] 屏幕宽高之和
-        "" + new Date,                           # [1] 当前时间字符串
-        performance.memory.jsHeapSizeLimit,      # [2] JS堆大小限制
-        Math.random() / attempt,                 # [3] 随机数（PoW时替换为尝试次数）
-        navigator.userAgent,                     # [4] UA
-        随机script src,                          # [5] 随机一个script标签的src
-        data-build 属性值,                       # [6] document.documentElement 的 data-build 属性
-        navigator.language,                      # [7] 语言
-        navigator.languages.join(","),            # [8] 语言列表
-        Math.random(),                           # [9] 随机数（PoW时替换为耗时）
-        随机navigator属性,                       # [10] 随机一个navigator原型方法
-        随机document key,                        # [11] 随机一个document的key
-        随机window key,                          # [12] 随机一个window的key
-        performance.now(),                       # [13] 高精度时间
-        sid (UUID),                              # [14] 会话ID
-        URL search params,                       # [15] URL查询参数
-        navigator.hardwareConcurrency,           # [16] CPU核心数
-        performance.timeOrigin,                  # [17] 性能时间原点
-        Number("ai" in window),                  # [18] window.ai 是否存在
-        Number("InstallTrigger" in window),      # [19] Firefox特有 → 0
-        Number("cache" in window),               # [20] window.cache 是否存在
-        Number("data" in window),                # [21] window.data 是否存在
-        Number("solana" in window),              # [22] Solana钱包 → 0
-        Number("dump" in window),                # [23] Firefox特有 → 0
-        Number("requestIdleCallback" in window), # [24] 是否支持requestIdleCallback
-    ]
-
     Args:
-        device_id: 设备ID
-        attempt: PoW尝试次数（用于替换 [3]）
-        elapsed_ms: PoW耗时毫秒数（用于替换 [9]）
+        device_id: 设备ID（写入 config[14] sid）
+        geo: 代理出口地理 profile（决定时区/语言/Date 字符串）
+        screen_width / screen_height: 屏幕尺寸（决定 config[0]）
+        hardware_concurrency: navigator.hardwareConcurrency
+        attempt: PoW 尝试次数；为 None 表示 requirements_token 模式，
+                 此时 config[3] 填 Math.random()
+        elapsed_ms: PoW 累计耗时；为 None 表示 requirements_token 模式，
+                    此时 config[9] 填 Math.random()
+        rng: 可选 RNG（PoW 内多次调用时复用以减少开销）
     """
-    # 模拟Chrome浏览器环境
-    now = datetime.now()
-    # 模拟 Date.toString() 的格式，例如:
-    # "Sun Apr 19 2026 19:46:20 GMT+0900 (日本標準時)"
-    # 注：时区与代理出口 IP（JP）保持一致，避免指纹与 IP 错配。
-    date_str = now.strftime("%a %b %d %Y %H:%M:%S GMT+0900 (日本標準時)")
+    rng = rng or random
+    if geo is None:
+        from config import build_default_profile
+        geo = build_default_profile()
 
-    # 模拟 performance.timeOrigin（页面加载时的时间戳，精确到毫秒）
-    time_origin = time.time() * 1000 - random.uniform(1000, 5000)
+    date_str = _date_toString(geo)
 
-    # 模拟 performance.now()（页面加载后经过的毫秒数）
-    perf_now = random.uniform(1000, 50000)
+    # 关键修复：performance.timeOrigin + performance.now() ≈ Date.now()
+    # 真浏览器里这两个值总是自洽的，不能分别用独立随机数填。
+    now_ms = time.time() * 1000
+    perf_now = round(rng.uniform(1000, 50000), 10)            # 页面加载后已经过去的毫秒数
+    time_origin = round(now_ms - perf_now, 1)                  # 页面"开始加载"的绝对时间戳
 
-    # 生成 sid（SDK内部的会话ID）
-    sid = str(device_id)
-
-    # 模拟一些常见的 navigator 属性及其值
-    navigator_props = [
-        "clearOriginJoinedAdInterestGroups−function clearOriginJoinedAdInterestGroups() { [native code] }",
-        "canLoadAdAuctionFencedFrame−function canLoadAdAuctionFencedFrame() { [native code] }",
-        "clipboard−[object Clipboard]",
-        "getBattery−function getBattery() { [native code] }",
-        "getGamepads−function getGamepads() { [native code] }",
-        "javaEnabled−function javaEnabled() { [native code] }",
-        "sendBeacon−function sendBeacon() { [native code] }",
-        "vibrate−function vibrate() { [native code] }",
-    ]
+    # config[3] / config[9] 的填充规则：
+    #   - requirements_token 模式（attempt=None）: 都填 Math.random() 浮点
+    #   - PoW 模式（attempt 为整数）: [3]=attempt（nonce）、[9]=耗时毫秒（整数）
+    if attempt is None:
+        c3: Any = rng.random()
+    else:
+        c3 = int(attempt)
+    if elapsed_ms is None:
+        c9: Any = rng.random()
+    else:
+        c9 = int(round(elapsed_ms))
 
     config = [
-        1920 + 1080,                    # [0] screen.width + screen.height = 3000
-        date_str,                        # [1] 时间字符串
-        4294967296,                      # [2] jsHeapSizeLimit (Chrome 典型值: 4GB)
-        attempt,                         # [3] PoW尝试次数 / Math.random()
-        USER_AGENT,                      # [4] UA
-        f"https://sentinel.openai.com/sentinel/{SENTINEL_SV}/sdk.js",  # [5] script src
-        None,                            # [6] data-build (通常为null)
-        "ja-JP",                         # [7] navigator.language（与 JP 出口 IP 对齐）
-        "ja-JP,ja,en-US,en",             # [8] navigator.languages
-        round(elapsed_ms) if elapsed_ms else random.randint(1, 100),  # [9] 耗时 / Math.random()
-        random.choice(navigator_props),  # [10] 随机navigator属性
-        "_reactListening" + "".join(random.choices("abcdefghijklmnopqrstuvwxyz0123456789", k=11)),  # [11] 随机document key
-        random.choice(["requestIdleCallback", "webkitRequestAnimationFrame", "onfocus", "onblur"]),  # [12] 随机window key
-        round(perf_now, 10),             # [13] performance.now()
-        sid,                             # [14] sid
-        "",                              # [15] URL search params (注册页面通常为空)
-        32,                              # [16] hardwareConcurrency (常见值: 4-32)
-        round(time_origin, 1),           # [17] performance.timeOrigin
-        0,                               # [18] Number("ai" in window)
-        0,                               # [19] Number("InstallTrigger" in window)  Firefox特有
-        0,                               # [20] Number("cache" in window)
-        0,                               # [21] Number("data" in window)
-        0,                               # [22] Number("solana" in window)
-        0,                               # [23] Number("dump" in window) Firefox特有
-        0,                               # [24] Number("requestIdleCallback" in window)
+        int(screen_width) + int(screen_height),                # [0] screen.width + screen.height
+        date_str,                                              # [1] Date.toString()
+        4294967296,                                            # [2] jsHeapSizeLimit (Chrome 4GB)
+        c3,                                                    # [3] Math.random() / PoW nonce
+        USER_AGENT,                                            # [4] UA
+        f"https://sentinel.openai.com/sentinel/{SENTINEL_SV}/sdk.js",  # [5] currentScript.src
+        None,                                                  # [6] documentElement[data-build] (auth.openai.com 上为 null)
+        geo["language"],                                       # [7] navigator.language
+        geo["languages"],                                      # [8] navigator.languages.join(",")
+        c9,                                                    # [9] Math.random() / PoW 耗时
+        rng.choice(_NAVIGATOR_PROPS),                          # [10] 随机 navigator 原型方法
+        "_reactListening" + "".join(rng.choices("abcdefghijklmnopqrstuvwxyz0123456789", k=11)),  # [11] document 随机 key
+        rng.choice(["requestIdleCallback", "webkitRequestAnimationFrame", "onfocus", "onblur"]),  # [12] window 随机 key
+        perf_now,                                              # [13] performance.now()
+        str(device_id),                                        # [14] sid
+        "",                                                    # [15] location.search
+        int(hardware_concurrency),                             # [16] hardwareConcurrency
+        time_origin,                                           # [17] performance.timeOrigin
+        0,                                                     # [18] "ai" in window
+        0,                                                     # [19] "InstallTrigger" in window (Firefox)
+        0,                                                     # [20] "cache" in window
+        0,                                                     # [21] "data" in window
+        0,                                                     # [22] "solana" in window
+        0,                                                     # [23] "dump" in window (Firefox)
+        0,                                                     # [24] "requestIdleCallback" in window
     ]
     return config
 
@@ -128,7 +146,6 @@ def encode_config(config: list) -> str:
     这等效于 Python 的：json_str.encode('utf-8') → base64 encode
     """
     json_str = json.dumps(config, ensure_ascii=False, separators=(',', ':'))
-    # 使用 UTF-8 编码再 base64 处理（与 SDK 的 TextEncoder + btoa 一致）
     encoded = base64.b64encode(json_str.encode('utf-8')).decode('ascii')
     return encoded
 
@@ -137,23 +154,10 @@ def fnv1a_hash(text: str) -> str:
     """
     FNV-1a 哈希算法（32位）。
     对应 SDK 中的哈希函数，用于 Proof of Work 校验。
-
-    JS 原始代码：
-        let e = 2166136261;
-        for (let r = 0; r < t.length; r++)
-            e ^= t.charCodeAt(r),
-            e = Math.imul(e, 16777619) >>> 0;
-        e ^= e >>> 16;
-        e = Math.imul(e, 2246822507) >>> 0;
-        e ^= e >>> 13;
-        e = Math.imul(e, 3266489909) >>> 0;
-        e ^= e >>> 16;
-        return (e >>> 0).toString(16).padStart(8, "0");
     """
     h = 2166136261
     for ch in text:
         h ^= ord(ch)
-        # Math.imul 模拟：32位整数乘法
         h = _imul(h, 16777619) & 0xFFFFFFFF
 
     h ^= (h >> 16)
@@ -167,19 +171,28 @@ def fnv1a_hash(text: str) -> str:
 
 
 def _imul(a: int, b: int) -> int:
-    """
-    模拟 JavaScript 的 Math.imul（32位整数乘法）。
-    Python 的整数没有溢出，需要手动截断为32位。
-    """
-    # 确保是32位无符号整数
+    """模拟 JavaScript 的 Math.imul（32位整数乘法）。"""
     a = a & 0xFFFFFFFF
     b = b & 0xFFFFFFFF
-    # 32位整数乘法
-    result = (a * b) & 0xFFFFFFFF
-    return result
+    return (a * b) & 0xFFFFFFFF
 
 
-def solve_proof_of_work(seed: str, difficulty: str, device_id: str, max_attempts: int = 500000) -> str:
+def _session_fp_kwargs(session: "BrowserSession") -> dict:
+    """从 BrowserSession 抽取指纹相关参数（geo / 屏幕 / 核心数）。"""
+    return {
+        "geo": session.geo,
+        "screen_width": session.screen_width,
+        "screen_height": session.screen_height,
+        "hardware_concurrency": session.hardware_concurrency,
+    }
+
+
+def solve_proof_of_work(
+    seed: str,
+    difficulty: str,
+    session: "BrowserSession",
+    max_attempts: int = 500000,
+) -> str:
     """
     计算 Proof of Work。
 
@@ -193,48 +206,52 @@ def solve_proof_of_work(seed: str, difficulty: str, device_id: str, max_attempts
     Args:
         seed: 服务端返回的 seed
         difficulty: 服务端返回的 difficulty（16进制前缀）
-        device_id: 设备ID
+        session: 浏览器会话（提供 device_id 与指纹画像）
         max_attempts: 最大尝试次数
 
     Returns:
-        PoW答案字符串，格式为 base64_encoded_config + "~S"
+        PoW 答案字符串，格式为 base64_encoded_config + "~S"
     """
     start_time = time.time() * 1000  # 毫秒
+    fp_kwargs = _session_fp_kwargs(session)
+    rng = random.Random()
 
-    # 生成初始 config
-    config = generate_fingerprint_data(device_id, attempt=0, elapsed_ms=0)
+    # 先生成一份基础 config，PoW 循环里只改 [3]/[9]/[13]
+    config = generate_fingerprint_data(
+        session.device_id, attempt=0, elapsed_ms=0, rng=rng, **fp_kwargs,
+    )
 
     diff_len = len(difficulty)
 
     for i in range(max_attempts):
-        # 更新尝试次数和耗时
+        elapsed = time.time() * 1000 - start_time
         config[3] = i
-        config[9] = round(time.time() * 1000 - start_time)
+        config[9] = int(round(elapsed))
+        # performance.now() 同步推进，保持自洽（与 time_origin 之差始终 ≈ Date.now()）
+        config[13] = round(config[17] - start_time + elapsed, 10)
 
-        # 编码为 base64
         encoded = encode_config(config)
-
-        # 计算哈希
         hash_input = seed + encoded
         hash_result = fnv1a_hash(hash_input)
 
-        # 检查是否满足难度要求
         if hash_result[:diff_len] <= difficulty:
             return encoded + "~S"
 
-    # 如果达到最大尝试次数仍未找到，返回错误前缀
+    # 达到最大尝试次数仍未找到 → 返回错误前缀（与原行为保持一致）
     return "wQ8Lk5FbGpA2NcR9dShT6gYjU7VxZ4D" + encode_config(["e"])
 
 
-def generate_requirements_token(device_id: str) -> str:
+def generate_requirements_token(session: "BrowserSession") -> str:
     """
-    生成 requirements token（p 字段的值）。
+    生成 requirements token（首次 sentinel/req 的 p 字段值）。
     对应 SDK 中的 getRequirementsToken() / _generateRequirementsTokenAnswerBlocking()
 
     这是第一次调用 sentinel/req 时 p 字段的值。
-    它就是简单的 config 编码 + "~S" 后缀，不需要PoW。
+    它就是简单的 config 编码 + "~S" 后缀，不需要 PoW。
     """
-    config = generate_fingerprint_data(device_id, attempt=1, elapsed_ms=0)
+    config = generate_fingerprint_data(
+        session.device_id, **_session_fp_kwargs(session),
+    )
     encoded = encode_config(config)
     return "gAAAAAC" + encoded + "~S"
 
@@ -242,20 +259,8 @@ def generate_requirements_token(device_id: str) -> str:
 def build_sentinel_request_body(p: str, device_id: str, flow: str) -> str:
     """
     构建 sentinel/req 的请求体。
-
-    Args:
-        p: 指纹数据（requirements token）
-        device_id: 设备ID
-        flow: 流程类型
-            - "username_password_create": 步骤6（注册前）
-            - "authorize_continue": 步骤9（验证码验证后）
-            - "oauth_create_account": 步骤11（创建账号前）
     """
-    body = {
-        "p": p,
-        "id": device_id,
-        "flow": flow,
-    }
+    body = {"p": p, "id": device_id, "flow": flow}
     return json.dumps(body, separators=(',', ':'))
 
 
@@ -264,13 +269,10 @@ def build_sentinel_token_header(
     turnstile_token: str,
     sentinel_token: str,
     device_id: str,
-    flow: str
+    flow: str,
 ) -> str:
     """
     构建 openai-sentinel-token 请求头的值。
-
-    最终格式为 JSON 字符串：
-    {"p":"<proof>","t":"<turnstile>","c":"<token>","id":"<device_id>","flow":"<flow>"}
     """
     header_value = {
         "p": p,
@@ -282,27 +284,21 @@ def build_sentinel_token_header(
     return json.dumps(header_value, separators=(',', ':'))
 
 
-def get_enforcement_token(sentinel_response: dict, seed: str, difficulty: str, device_id: str) -> str:
+def get_enforcement_token(
+    sentinel_response: dict,
+    seed: str,
+    difficulty: str,
+    session: "BrowserSession",
+) -> str:
     """
-    在有 PoW 要求时，计算 enforcement token（带PoW的p字段）。
-    对应 SDK 中的 getEnforcementToken()。
-
-    Args:
-        sentinel_response: sentinel/req 的响应 JSON
-        seed: proofofwork.seed
-        difficulty: proofofwork.difficulty
-        device_id: 设备ID
-
-    Returns:
-        PoW 结果字符串（base64 + ~S）
+    在有 PoW 要求时，计算 enforcement token（带 PoW 的 p 字段）。
     """
     pow_data = sentinel_response.get("proofofwork", {})
 
     if pow_data.get("required"):
         pow_seed = pow_data.get("seed", "")
         pow_difficulty = pow_data.get("difficulty", "")
-        answer = solve_proof_of_work(pow_seed, pow_difficulty, device_id)
+        answer = solve_proof_of_work(pow_seed, pow_difficulty, session)
         return "gAAAAAB" + answer
 
-    # 不需要PoW时，返回简单的指纹
-    return generate_requirements_token(device_id)
+    return generate_requirements_token(session)

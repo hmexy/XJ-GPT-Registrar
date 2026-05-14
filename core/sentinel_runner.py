@@ -17,11 +17,12 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from config import (
-    USER_AGENT,
-    SEC_CH_UA_PLATFORM,  # noqa: F401（保留给后续扩展）
-)
+from config import USER_AGENT, SENTINEL_SV
+
+if TYPE_CHECKING:
+    from core.session import BrowserSession
 
 logger = logging.getLogger(__name__)
 
@@ -65,38 +66,29 @@ def _ensure_runner_environment() -> None:
 def generate_sentinel_token(
     challenge: dict,
     flow: str,
-    device_id: str,
-    user_agent: str | None = None,
+    session: "BrowserSession",
     page_url: str | None = None,
 ) -> str:
     """
     把 sentinel.openai.com 返回的 challenge 喂给 sdk.js，生成最终 sentinel-token 字符串。
 
     Args:
-        challenge: sentinel/req 返回的完整 JSON（含 token / proofofwork / turnstile / so 字段）
-        flow: 流程标识，例如 username_password_create / authorize_continue / oauth_create_account
-        device_id: oai-did，必须与 Python 端 BrowserSession 持有的同一个值
-        user_agent: 必须与 Python 端请求 UA 完全一致；默认读取 config.USER_AGENT
-        page_url: 当前所在页面 URL（影响 referer / location 指纹）；默认按 flow 推断
-
-    Returns:
-        openai-sentinel-token 头的完整字符串值（runner 的 stdout 原样返回，已是 JSON 字符串）
-
-    Raises:
-        FileNotFoundError: runner.js 或 sdk.js 缺失
-        RuntimeError: Node 子进程异常或返回非零退出码
+        challenge: sentinel/req 返回的完整 JSON
+        flow: 流程标识
+        session: 浏览器会话（提供 device_id / UA / 屏幕 / 核心数 / 出口 geo profile）
+        page_url: 当前页面 URL（影响 referer / location 指纹）；默认按 flow 推断
     """
     _ensure_runner_environment()
 
     if not flow:
         raise ValueError("flow 不能为空")
-    if not device_id:
-        raise ValueError("device_id 不能为空")
+    if not session.device_id:
+        raise ValueError("session.device_id 不能为空")
 
-    ua = user_agent or USER_AGENT
     page = page_url or _FLOW_PAGE_URL.get(
         flow, "https://auth.openai.com/create-account/password"
     )
+    geo = session.geo
 
     # 把 challenge 写入临时文件，避免命令行长度 / 转义问题
     tmp = tempfile.NamedTemporaryFile(
@@ -116,20 +108,33 @@ def generate_sentinel_token(
             str(_RUNNER_PATH),
             "--challenge-file", tmp.name,
             "--flow", flow,
-            "--device-id", device_id,
+            "--device-id", session.device_id,
             "--page-url", page,
-            "--user-agent", ua,
+            "--user-agent", USER_AGENT,
             "--sdk", str(_SDK_PATH),
-            # 与 core/sentinel.py 中的指纹默认值保持一致
-            "--width", "1920",
-            "--height", "1080",
-            "--cores", "32",
-            "--language", "ja-JP",
-            "--languages", "ja-JP,ja,en-US,en",
+            # 关键修复：scriptSrc 必须指向真实的 sentinel.openai.com sdk.js，
+            # 否则 sandbox 里 currentScript.src 会跟 Python 端的 sentinel referer
+            # 自相矛盾（一边是 chatgpt.com 一边是 sentinel.openai.com）。
+            "--script-src", f"https://sentinel.openai.com/sentinel/{SENTINEL_SV}/sdk.js",
+            # 关键修复：auth.openai.com 的页面没有 data-build 属性。
+            # --no-build-id 让 sandbox 不挂这个属性，getAttribute 自然返回 null。
+            "--no-build-id",
+            # 指纹画像与 Python 端 BrowserSession 完全一致（每个号都从 device_id 派生）
+            "--width", str(session.screen_width),
+            "--height", str(session.screen_height),
+            "--cores", str(session.hardware_concurrency),
+            # 语言/区域随代理出口动态切换
+            "--language", geo["language"],
+            "--languages", geo["languages"],
             "--no-cookie",
         ]
 
-        logger.info(f"[SentinelRunner] 调用 Node 生成 token, flow={flow}")
+        logger.info(
+            f"[SentinelRunner] 调用 Node 生成 token, flow={flow}, "
+            f"geo={geo['country']}/{geo['language']}, "
+            f"screen={session.screen_width}x{session.screen_height}, "
+            f"cores={session.hardware_concurrency}"
+        )
         logger.debug(f"[SentinelRunner] 命令: {' '.join(cmd)}")
 
         # 关键：禁用 sentinel.config.json 自动发现（避免外部配置干扰）
@@ -172,7 +177,6 @@ def generate_sentinel_token(
                 f"sentinel-runner.js 输出为空, stderr: {(proc.stderr or '').strip()}"
             )
 
-        # 简单合法性校验：必须是合法 JSON 且包含关键字段
         try:
             parsed = json.loads(token_text)
         except json.JSONDecodeError as exc:
@@ -186,7 +190,6 @@ def generate_sentinel_token(
                     f"runner 输出缺少字段 {required_key}: {token_text[:200]}"
                 )
 
-        # 详细诊断：打印输出 JSON 的所有顶层字段名 + 值长度
         field_summary = {
             k: (len(v) if isinstance(v, str) else type(v).__name__)
             for k, v in parsed.items()
@@ -200,7 +203,6 @@ def generate_sentinel_token(
         return token_text
 
     finally:
-        # 清理临时文件
         try:
             os.unlink(tmp.name)
         except OSError:

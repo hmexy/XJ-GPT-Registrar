@@ -24,6 +24,7 @@ from urllib.parse import urlparse
 from flask import Flask, Response, jsonify, render_template, request
 
 from config import proxy as proxy_config
+from config import geo as geo_config
 from core.account_export import create_batch_archive_dir
 from core.email_provider import acquire_email
 from core.outlook_client import OutlookAccount, _CONTEXT_CACHE
@@ -403,7 +404,9 @@ def api_proxy_set():
     if val is None:
         # 仅清除运行时覆盖,不动 PROXY_POOL 也不动文件
         proxy_config.set_runtime_proxy(None)
-        logger.info("[代理] 已清除 runtime override,恢复 PROXY_POOL 抽取")
+        # 出口可能完全变了,清掉 geo 缓存让下一个 BrowserSession 重新探测
+        geo_config.reset_cache()
+        logger.info("[代理] 已清除 runtime override,恢复 PROXY_POOL 抽取;geo 缓存已重置")
         return jsonify({
             "ok": True,
             "override": proxy_config.get_runtime_proxy(),
@@ -426,7 +429,10 @@ def api_proxy_set():
 
     # 持久化成功后再设置 runtime override 让当前会话立即生效
     proxy_config.set_runtime_proxy(normalized)
-    logger.info(f"[代理] 已设置并持久化: {normalized or '(直连)'}")
+    # 切换出口必然伴随 geo 变化(同一个 localhost:7890 也可能背后换了机场节点),
+    # 强制重置 geo 探测缓存,下次注册会重新调 ipinfo 拿当前出口
+    geo_config.reset_cache()
+    logger.info(f"[代理] 已设置并持久化: {normalized or '(直连)'};geo 缓存已重置")
 
     return jsonify({
         "ok": True,
@@ -453,6 +459,64 @@ def api_proxy_test():
     result = _probe_proxy(proxy_url)
     result["proxy_used"] = proxy_url or "(直连)"
     return jsonify(result)
+
+
+# OpenAI 拒绝注册的国家/地区 —— 命中时前端给红色警告
+_BLOCKED_COUNTRIES: set[str] = {"CN", "HK", "RU", "IR", "KP", "SY", "CU", "VE"}
+
+
+@app.route("/api/geo/detect", methods=["POST"])
+def api_geo_detect():
+    """
+    检测当前(或指定)代理的出口地理位置,返回完整的指纹 profile。
+
+    body:
+        {"proxy": "..."}   显式探测某代理
+        {"proxy": null}    不传或 null → 探测当前 effective 代理
+        {"force": true}    强制清缓存重探(默认 true)
+
+    返回:
+        country / tz_name / language / languages / tz_string / tz_label / blocked
+        以及 proxy_used / detected_at 用于 UI 展示
+    """
+    data = request.get_json(silent=True) or {}
+    if "proxy" in data and data["proxy"] is not None:
+        try:
+            proxy_url = _validate_proxy_url(str(data["proxy"]))
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+    else:
+        proxy_url = proxy_config.pick_proxy()
+
+    if bool(data.get("force", True)):
+        geo_config.reset_cache()
+
+    try:
+        profile = geo_config.detect_geo(proxy_url or None)
+    except Exception as exc:
+        logger.exception("[Geo] 探测失败")
+        return jsonify({"ok": False, "error": f"{type(exc).__name__}: {exc}"}), 500
+
+    country = (profile.get("country") or "").upper()
+    blocked = country in _BLOCKED_COUNTRIES
+
+    logger.info(
+        f"[Geo] 手动探测 proxy={proxy_url or '(直连)'} country={country} "
+        f"tz={profile.get('tz_name')} lang={profile.get('language')} blocked={blocked}"
+    )
+
+    return jsonify({
+        "ok": True,
+        "proxy_used": proxy_url or "(直连)",
+        "country": country,
+        "tz_name": profile.get("tz_name"),
+        "tz_string": profile.get("tz_string"),
+        "tz_label": profile.get("tz_label"),
+        "language": profile.get("language"),
+        "languages": profile.get("languages"),
+        "blocked": blocked,
+        "detected_at": datetime.now().isoformat(timespec="seconds"),
+    })
 
 
 @app.route("/api/start", methods=["POST"])

@@ -29,3 +29,14 @@ accounts/
 *.log
 *.bak
 *.tmp
+
+# ---- 外部工具 (用户自行下载,与注册机不直接耦合) ----
+CLIProxyAPI_*/
+
+# ---- Claude Code 会话数据 ----
+.claude/
+
+# ---- 含真实凭据/与项目无直接关联的本地配置 ----
+config/sms.py
+config/cliproxy.py
+config/*_local.py

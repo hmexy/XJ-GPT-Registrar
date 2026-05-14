@@ -329,7 +329,8 @@ function createBrowserContext(options) {
     { src: "https://js.stripe.com/v3/", length: 24 },
     { src: "https://chatgpt.com/c/prod-4987068829830ddc3ae6683bd4e633f61b79dec9/_ssg.js", length: 82 },
   ];
-  const attrs = new Map([["data-build", options.buildId]]);
+  const attrs = new Map();
+  if (options.buildId) attrs.set("data-build", options.buildId);
 
   let iframeNode = null;
   const bodyChildren = [];
@@ -645,7 +646,9 @@ async function main(argv = process.argv.slice(2), writeOutput = true) {
         process.env.SENTINEL_SCRIPT_SRC,
       "https://chatgpt.com/sentinel/20260423af3c/sdk.js",
       ),
-    buildId: pick(args["build-id"], cfg("buildId", "build_id"), process.env.SENTINEL_BUILD_ID, "prod-4987068829830ddc3ae6683bd4e633f61b79dec9"),
+    buildId: (args["no-build-id"] === "1" || truthy(cfg("noBuildId", "no_build_id")))
+      ? ""
+      : pick(args["build-id"], cfg("buildId", "build_id"), process.env.SENTINEL_BUILD_ID, "prod-4987068829830ddc3ae6683bd4e633f61b79dec9"),
     cookie: noCookie
       ? `oai-did=${deviceId}`
       : cookieArg ||

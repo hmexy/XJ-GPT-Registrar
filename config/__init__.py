@@ -42,6 +42,13 @@ from config.proxy import (
     PROXY,
 )
 
+# ---------- 代理出口地理探测 ----------
+from config.geo import (
+    detect_geo,
+    build_default_profile,
+    accept_language_header,
+)
+
 # ---------- 注册默认信息 ----------
 from config.register import (
     REGISTER_EMAIL,
@@ -74,6 +81,8 @@ __all__ = [
     "SENTINEL_SV",
     # proxy
     "PROXY_POOL", "pick_proxy", "PROXY",
+    # geo
+    "detect_geo", "build_default_profile", "accept_language_header",
     # register
     "REGISTER_EMAIL", "REGISTER_PASSWORD", "REGISTER_NAME", "REGISTER_BIRTHDAY",
     # email

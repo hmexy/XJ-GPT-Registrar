@@ -153,8 +153,8 @@ def request_sentinel_token(session: BrowserSession, flow: str) -> dict:
     """
     url = "https://sentinel.openai.com/backend-api/sentinel/req"
 
-    # 生成 p 字段（浏览器指纹）
-    p = generate_requirements_token(session.device_id)
+    # 生成 p 字段（浏览器指纹）—— 与代理出口地理/会话画像对齐
+    p = generate_requirements_token(session)
 
     # 构建请求体
     body = build_sentinel_request_body(p, session.device_id, flow)
@@ -203,13 +203,10 @@ def build_sentinel_header(session: BrowserSession, sentinel_resp: dict, flow: st
         sentinel_header: openai-sentinel-token 请求头的值（runner 直接产出的 JSON 字符串）
         so_header: openai-sentinel-so-token 请求头的值（若 SDK 输出含 so 字段则填充，否则为 None）
     """
-    from config import USER_AGENT
-
     header_value = generate_sentinel_token(
         challenge=sentinel_resp,
         flow=flow,
-        device_id=session.device_id,
-        user_agent=USER_AGENT,
+        session=session,
     )
 
     # 解析 runner 输出，单独抽出 so 字段填充 openai-sentinel-so-token
